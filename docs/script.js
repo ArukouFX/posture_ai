@@ -19,28 +19,37 @@ const CONSEC_FRAMES_JS = 2; // Frames consecutivos para considerarlo un parpadeo
 
 // Inicializa la cámara y los modelos de IA
 async function setupWebcam() {
-    // 1. Cargar modelos
-    poseNetModel = await posenet.load();
+    try {
+        // 1. Cargar modelos
+        poseNetModel = await posenet.load();
 
-    // *** CORRECCIÓN CRÍTICA (LÍNEA 20) ***
-    // Se usa SupportedModels en lugar de SupportedPackages para Face Landmarks.
-    faceLandmarksModel = await faceLandmarksDetection.load(
-        faceLandmarksDetection.SupportedModels.MEDIA_PIPE_FACE_MESH
-    );
-    // *** FIN CORRECCIÓN CRÍTICA ***
+        // *** CORRECCIÓN COMPLETA para Face Landmarks Detection ***
+        faceLandmarksModel = await faceLandmarksDetection.load(
+            faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
+            {
+                runtime: 'mediapipe',
+                solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh'
+            }
+        );
 
-    // 2. Iniciar video
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    video.srcObject = stream;
+        // 2. Iniciar video
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: 640, height: 480 } 
+        });
+        video.srcObject = stream;
 
-    return new Promise((resolve) => {
-        video.onloadedmetadata = () => {
-            // Ajustar canvas al tamaño del video
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            resolve(video);
-        };
-    });
+        return new Promise((resolve) => {
+            video.onloadedmetadata = () => {
+                // Ajustar canvas al tamaño del video
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                resolve(video);
+            };
+        });
+    } catch (error) {
+        console.error("Error en setupWebcam:", error);
+        throw error;
+    }
 }
 
 // Bucle principal de la aplicación (se ejecuta continuamente)
@@ -120,9 +129,8 @@ async function detectFatigue(input) {
     if (faces.length > 0) {
         const mesh = faces[0].scaledMesh;
         
-        // *** CORRECCIÓN 2 (avgEAR definido antes de ser usado) ***
-        const avgEAR = eyeAspectRatio(mesh); // Resuelve el ReferenceError
-        // *** FIN CORRECCIÓN 2 ***
+        // *** CORRECCIÓN: avgEAR definido antes de ser usado ***
+        const avgEAR = eyeAspectRatio(mesh);
 
         // --- Lógica de Detección de Parpadeo ---
         const eyeClosed = avgEAR < EAR_THRESHOLD;
