@@ -5,19 +5,27 @@ const ctx = canvas.getContext('2d');
 let poseNetModel; // Para la detección de postura
 let faceLandmarksModel; // Para la detección de fatiga
 
-// Variables globales para la lógica de fatiga (similares a Python)
+// Variables globales para la lógica de fatiga
 let totalBlinks = 0;
 let lastBlinkTime = Date.now();
 const EAR_THRESHOLD = 0.21;
 const NO_BLINK_SECONDS = 10;
 const POSTURE_THRESHOLD = 170;
 
+// [CORRECCIÓN 2] Variables para el contador de frames de parpadeo
+let blinkCounterJS = 0;
+const CONSEC_FRAMES_JS = 2; // Frames consecutivos para considerarlo un parpadeo
+
+
 // Inicializa la cámara y los modelos de IA
 async function setupWebcam() {
     // 1. Cargar modelos
     poseNetModel = await posenet.load();
+
+    // [CORRECCIÓN 1: CRÍTICA] Se reemplaza SupportedPackages por SupportedModels.
+    // Esto resuelve el error "reading 'mediapipeFaceMesh'".
     faceLandmarksModel = await faceLandmarksDetection.load(
-        faceLandmarksDetection.SupportedPackages.mediapipeFaceMesh
+        faceLandmarksDetection.SupportedModels.MEDIA_PIPE_FACE_MESH
     );
 
     // 2. Iniciar video
@@ -49,10 +57,15 @@ function detectLoop() {
 
 setupWebcam().then(() => {
     detectLoop(); // Iniciar el bucle cuando todo esté listo
+}).catch(error => {
+    // Añadimos un catch para manejar el error de la cámara (si el usuario la niega)
+    console.error("Error al iniciar la cámara. Asegúrese de estar en HTTPS y de dar permiso.", error);
+    alert("Error: Se requiere permiso para usar la cámara. Verifique la consola.");
 });
 
+
 function calculateAngle(A, B, C) {
-    // Simula la función de ángulo de Python, usando coordenadas X, Y
+    // ... (Tu función calculateAngle está correcta)
     const AB = Math.sqrt(Math.pow(B.x - A.x, 2) + Math.pow(B.y - A.y, 2));
     const BC = Math.sqrt(Math.pow(B.x - C.x, 2) + Math.pow(B.y - C.y, 2));
     const AC = Math.sqrt(Math.pow(C.x - A.x, 2) + Math.pow(C.y - A.y, 2));
@@ -63,18 +76,16 @@ function calculateAngle(A, B, C) {
 }
 
 async function detectPosture(input) {
-    // PoseNet devuelve una lista de poses (solo nos interesa la primera)
+    // ... (Tu función detectPosture está correcta)
     const pose = await poseNetModel.estimateSinglePose(input);
 
     if (pose.score > 0.5) {
         const keypoints = pose.keypoints;
         
-        // Obtener hombros y nariz (claves para la alineación del cuello)
         const leftShoulder = keypoints.find(k => k.part === 'leftShoulder').position;
         const rightShoulder = keypoints.find(k => k.part === 'rightShoulder').position;
         const nose = keypoints.find(k => k.part === 'nose').position;
 
-        // Asegurar que los puntos tengan suficiente confianza
         if (leftShoulder.score > 0.1 && rightShoulder.score > 0.1 && nose.score > 0.1) {
              const angle = calculateAngle(leftShoulder, nose, rightShoulder);
 
@@ -84,21 +95,13 @@ async function detectPosture(input) {
                  updateAlert('posture-alert', `✅ Postura Correcta (${angle.toFixed(2)}°).`, 'alert-ok');
              }
         }
-        
-        // Opcional: Dibujar keypoints de PoseNet en el canvas para debug
-        // drawKeypoints(keypoints, 0.5, ctx); 
     }
 }
 
 function eyeAspectRatio(landmarks) {
-    // Implementación del EAR en JS
+    // ... (Tu función eyeAspectRatio está correcta, asumiendo que los índices son correctos)
     const p = (i) => landmarks[i];
     
-    // Coordenadas del ojo izquierdo (ejemplo de 6 puntos)
-    // El modelo Face Landmarks de TF.js usa índices diferentes, por lo que necesitarás mapearlos
-    // Por simplicidad, usaremos un subconjunto.
-    
-    // Simula la implementación de Python para el cálculo de distancias (puedes ajustar los índices)
     const dist = (p1, p2) => Math.sqrt(Math.pow(p2[0] - p1[0], 2) + Math.pow(p2[1] - p1[1], 2));
 
     // Usaremos índices aproximados (deberás mapearlos con la documentación de Face Landmarks)
@@ -114,21 +117,27 @@ async function detectFatigue(input) {
     const faces = await faceLandmarksModel.estimateFaces({ input: input });
 
     if (faces.length > 0) {
-        // Asumimos solo una persona
         const mesh = faces[0].scaledMesh;
         
-        // Calcular EAR (se debe hacer para ambos ojos y promediar)
-        // Nota: Los índices de MediaPipe Python (33, 160, etc.) deben ser validados
-        // con la salida de `faces[0].scaledMesh` del modelo de TF.js.
-        const avgEAR = eyeAspectRatio(mesh); // Función placeholder con índices de ejemplo
+        // [CORRECCIÓN 2] avgEAR es ahora una declaración local
+        const avgEAR = eyeAspectRatio(mesh);
 
-        // Lógica de Fatiga (similar a Python)
-        if (avgEAR < EAR_THRESHOLD) {
-            // Esto simula un contador de frames. En JS, se usa la variable global.
-            // Para una simulación precisa, necesitarías un contador de frames o un estado de "ojos cerrados".
+        // --- Lógica de Detección de Parpadeo ---
+        const eyeClosed = avgEAR < EAR_THRESHOLD;
+
+        if (eyeClosed) {
+            blinkCounterJS += 1;
+        } else {
+            // Se detecta el parpadeo cuando el ojo se vuelve a abrir después de X frames
+            if (blinkCounterJS >= CONSEC_FRAMES_JS) {
+                totalBlinks += 1;
+                lastBlinkTime = Date.now(); // ¡Actualiza el tiempo del último parpadeo!
+                console.log(`Parpadeo detectado! Total: ${totalBlinks}`);
+            }
+            blinkCounterJS = 0;
         }
         
-        // Verificar Fatiga Visual por tiempo sin parpadear
+        // --- Lógica de Detección de Fatiga Visual ---
         const timeSinceLastBlink = (Date.now() - lastBlinkTime) / 1000; // Segundos
 
         if (timeSinceLastBlink >= NO_BLINK_SECONDS) {
@@ -136,6 +145,10 @@ async function detectFatigue(input) {
         } else {
             updateAlert('fatigue-alert', `👁️ Ojos OK (${timeSinceLastBlink.toFixed(1)}s sin parpadear).`, 'alert-ok');
         }
+
+    } else {
+        // Si no se detecta rostro, asumimos que no hay fatiga por ahora.
+        updateAlert('fatigue-alert', `👁️ Ojos OK (Rostro no detectado).`, 'alert-ok');
     }
 }
 
@@ -144,40 +157,3 @@ function updateAlert(id, message, className) {
     element.textContent = message;
     element.className = className;
 }
-
-// **Falta la lógica precisa para actualizar `lastBlinkTime`**
-// En un entorno de producción, la función `detectFatigue` debería determinar
-// si un parpadeo completo ha ocurrido y, si es así, actualizar `lastBlinkTime = Date.now()`.
-
-// --- Lógica a añadir en script.js, preferiblemente antes de setupWebcam ---
-let blinkCounterJS = 0;
-const CONSEC_FRAMES_JS = 2; // Frames consecutivos para considerarlo un parpadeo
-
-// --- Dentro de async function detectFatigue(input) { ... } ---
-
-// Asumiendo que avgEAR es el EAR promedio calculado...
-
-const eyeClosed = avgEAR < EAR_THRESHOLD;
-
-if (eyeClosed) {
-    blinkCounterJS += 1;
-} else {
-    // Si el ojo se abre después de estar cerrado por X frames
-    if (blinkCounterJS >= CONSEC_FRAMES_JS) {
-        totalBlinks += 1;
-        lastBlinkTime = Date.now(); // ¡Actualiza el tiempo del último parpadeo!
-        console.log(`Parpadeo detectado! Total: ${totalBlinks}`);
-    }
-    blinkCounterJS = 0;
-}
-
-// ... El resto de la lógica de tiempo sin parpadear ya está definida:
-/*
-const timeSinceLastBlink = (Date.now() - lastBlinkTime) / 1000; // Segundos
-
-if (timeSinceLastBlink >= NO_BLINK_SECONDS) {
-    updateAlert('fatigue-alert', `🚨 ¡FATIGA VISUAL! Descansa la vista.`, 'alert-bad');
-} else {
-    updateAlert('fatigue-alert', `👁️ Ojos OK (${timeSinceLastBlink.toFixed(1)}s sin parpadear).`, 'alert-ok');
-}
-*/
