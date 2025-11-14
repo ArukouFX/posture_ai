@@ -1,0 +1,32 @@
+name: Deploy Static Web App to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      # El paso clave: crear el artefacto (ZIP) a partir de la carpeta 'docs'.
+      # Esto garantiza que solo los archivos dentro de 'docs' se desplieguen.
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'docs' # <--- ESTA ES LA RUTA CRÍTICA
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
