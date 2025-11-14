@@ -12,7 +12,7 @@ const EAR_THRESHOLD = 0.21;
 const NO_BLINK_SECONDS = 10;
 const POSTURE_THRESHOLD = 170;
 
-// [CORRECCIÓN 2] Variables para el contador de frames de parpadeo
+// Variables para el contador de frames de parpadeo
 let blinkCounterJS = 0;
 const CONSEC_FRAMES_JS = 2; // Frames consecutivos para considerarlo un parpadeo
 
@@ -22,11 +22,12 @@ async function setupWebcam() {
     // 1. Cargar modelos
     poseNetModel = await posenet.load();
 
-    // [CORRECCIÓN 1: CRÍTICA] Se reemplaza SupportedPackages por SupportedModels.
-    // Esto resuelve el error "reading 'mediapipeFaceMesh'".
+    // *** CORRECCIÓN CRÍTICA (LÍNEA 20) ***
+    // Se usa SupportedModels en lugar de SupportedPackages para Face Landmarks.
     faceLandmarksModel = await faceLandmarksDetection.load(
         faceLandmarksDetection.SupportedModels.MEDIA_PIPE_FACE_MESH
     );
+    // *** FIN CORRECCIÓN CRÍTICA ***
 
     // 2. Iniciar video
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -58,14 +59,14 @@ function detectLoop() {
 setupWebcam().then(() => {
     detectLoop(); // Iniciar el bucle cuando todo esté listo
 }).catch(error => {
-    // Añadimos un catch para manejar el error de la cámara (si el usuario la niega)
+    // Manejo del error de cámara si el usuario la niega o falla el acceso
     console.error("Error al iniciar la cámara. Asegúrese de estar en HTTPS y de dar permiso.", error);
     alert("Error: Se requiere permiso para usar la cámara. Verifique la consola.");
 });
 
 
 function calculateAngle(A, B, C) {
-    // ... (Tu función calculateAngle está correcta)
+    // Tu función calculateAngle
     const AB = Math.sqrt(Math.pow(B.x - A.x, 2) + Math.pow(B.y - A.y, 2));
     const BC = Math.sqrt(Math.pow(B.x - C.x, 2) + Math.pow(B.y - C.y, 2));
     const AC = Math.sqrt(Math.pow(C.x - A.x, 2) + Math.pow(C.y - A.y, 2));
@@ -76,7 +77,7 @@ function calculateAngle(A, B, C) {
 }
 
 async function detectPosture(input) {
-    // ... (Tu función detectPosture está correcta)
+    // Tu función detectPosture
     const pose = await poseNetModel.estimateSinglePose(input);
 
     if (pose.score > 0.5) {
@@ -99,7 +100,7 @@ async function detectPosture(input) {
 }
 
 function eyeAspectRatio(landmarks) {
-    // ... (Tu función eyeAspectRatio está correcta, asumiendo que los índices son correctos)
+    // Implementación del EAR en JS
     const p = (i) => landmarks[i];
     
     const dist = (p1, p2) => Math.sqrt(Math.pow(p2[0] - p1[0], 2) + Math.pow(p2[1] - p1[1], 2));
@@ -119,8 +120,9 @@ async function detectFatigue(input) {
     if (faces.length > 0) {
         const mesh = faces[0].scaledMesh;
         
-        // [CORRECCIÓN 2] avgEAR es ahora una declaración local
-        const avgEAR = eyeAspectRatio(mesh);
+        // *** CORRECCIÓN 2 (avgEAR definido antes de ser usado) ***
+        const avgEAR = eyeAspectRatio(mesh); // Resuelve el ReferenceError
+        // *** FIN CORRECCIÓN 2 ***
 
         // --- Lógica de Detección de Parpadeo ---
         const eyeClosed = avgEAR < EAR_THRESHOLD;
@@ -137,7 +139,7 @@ async function detectFatigue(input) {
             blinkCounterJS = 0;
         }
         
-        // --- Lógica de Detección de Fatiga Visual ---
+        // --- Lógica de Detección de Fatiga Visual (por tiempo) ---
         const timeSinceLastBlink = (Date.now() - lastBlinkTime) / 1000; // Segundos
 
         if (timeSinceLastBlink >= NO_BLINK_SECONDS) {
@@ -147,8 +149,8 @@ async function detectFatigue(input) {
         }
 
     } else {
-        // Si no se detecta rostro, asumimos que no hay fatiga por ahora.
-        updateAlert('fatigue-alert', `👁️ Ojos OK (Rostro no detectado).`, 'alert-ok');
+        // Si no se detecta rostro, la alerta se mantiene neutral
+        updateAlert('fatigue-alert', `👁️ Ojos OK (Esperando rostro...).`, 'alert-ok');
     }
 }
 
